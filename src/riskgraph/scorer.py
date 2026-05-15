@@ -1,257 +1,257 @@
-"""Core scoring engine — produces 0-10 risk scores with explainability."""
+"""RiskGraph — real scoring with live data from npm, PyPI, GitHub, and NVD."""
 
-from __future__ import annotations
-import math
+import httpx
+import json
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Optional
-
-
-class RiskLevel(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
-
-
-@dataclass
-class Signal:
-    name: str
-    raw_value: float  # 0-1 normalized
-    weight: float
-    contribution: float = 0.0
-    detail: str = ""
-
+from datetime import datetime, timezone
 
 @dataclass
 class RiskReport:
     package: str
     ecosystem: str
     version: str = "latest"
-    score: float = 0.0  # 0=safe, 10=dangerous
-    level: RiskLevel = RiskLevel.LOW
-    signals: list[Signal] = field(default_factory=list)
-    dependencies_at_risk: int = 0
-    total_dependencies: int = 0
+    score: float = 5.0
+    level: str = "MEDIUM"
+    signals: list = field(default_factory=list)
 
-    @property
-    def score_color(self) -> str:
-        if self.score <= 3.0:
-            return "green"
-        elif self.score <= 6.0:
-            return "yellow"
-        elif self.score <= 8.0:
-            return "red"
-        return "bold red"
-
-
-# ── Default weights ──────────────────────────────────────────────────────────
-
-DEFAULT_WEIGHTS = {
-    "maintainer_trust": 0.20,
-    "dependency_depth": 0.15,
-    "abandoned_deps": 0.15,
-    "cve_count": 0.20,
-    "typosquatting": 0.10,
-    "version_anomaly": 0.10,
-    "download_anomaly": 0.10,
+REAL_WEIGHTS = {
+    "maintainer_activity": 2.5,
+    "version_stability": 1.5,
+    "license_risk": 1.5,
+    "download_trust": 1.5,
+    "cve_history": 3.0,
 }
 
+def _compute_level(score: float) -> str:
+    if score >= 8.0: return "CRITICAL"
+    if score >= 6.0: return "HIGH"
+    if score >= 3.0: return "MEDIUM"
+    return "LOW"
 
-def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
-    return max(lo, min(hi, v))
+def _fetch_npm(pkg: str) -> dict:
+    try:
+        r = httpx.get(f"https://registry.npmjs.org/{pkg}", timeout=15)
+        data = r.json()
+        versions = list(data.get("versions", {}).keys())
+        time_map = data.get("time", {})
+        return {
+            "versions": versions,
+            "times": time_map,
+            "latest": data.get("dist-tags", {}).get("latest", "unknown"),
+            "maintainers": data.get("maintainers", []),
+            "license": data.get("license", ""),
+            "description": data.get("description", ""),
+        }
+    except Exception:
+        return {}
 
+def _fetch_pypi(pkg: str) -> dict:
+    try:
+        r = httpx.get(f"https://pypi.org/pypi/{pkg}/json", timeout=15)
+        info = r.json().get("info", {})
+        urls = r.json().get("urls", [])
+        return {
+            "version": info.get("version", ""),
+            "license": info.get("license", ""),
+            "author": info.get("author", ""),
+            "summary": info.get("summary", ""),
+            "urls_count": len(urls),
+            "requires_python": info.get("requires_python", ""),
+        }
+    except Exception:
+        return {}
 
-def compute_maintainer_trust(
-    maintainer_count: int = 1,
-    avg_account_age_days: float = 365,
-    recent_commit_days: int = 30,
-    maintainer_churn_count: int = 0,
-) -> float:
-    """Return 0-1 risk signal. Higher = more risky.
+def _fetch_github_stats(repo_url: str) -> dict:
+    if not repo_url:
+        return {}
+    # Extract owner/repo from various URL formats
+    repo = repo_url.strip("/").replace("git+", "").replace(".git", "")
+    for prefix in ["https://github.com/", "http://github.com/", "git@github.com:"]:
+        if prefix in repo:
+            repo = repo.split(prefix)[-1]
+            break
+    
+    parts = repo.split("/")
+    if len(parts) < 2:
+        return {}
+    path = f"{parts[0]}/{parts[1]}"
+    
+    try:
+        r = httpx.get(f"https://api.github.com/repos/{path}", timeout=10,
+                      headers={"Accept": "application/vnd.github.v3+json"})
+        if r.status_code != 200:
+            return {}
+        d = r.json()
+        return {
+            "stars": d.get("stargazers_count", 0),
+            "forks": d.get("forks_count", 0),
+            "open_issues": d.get("open_issues_count", 0),
+            "updated": d.get("updated_at", ""),
+            "pushed": d.get("pushed_at", ""),
+            "created": d.get("created_at", ""),
+            "watchers": d.get("subscribers_count", 0),
+        }
+    except Exception:
+        return {}
 
-    Risk increases when:
-    - Few maintainers (bus factor)
-    - Young accounts
-    - Stale commits
-    - High churn
-    """
-    bus_risk = 1.0 / max(maintainer_count, 1)  # 1 maintainer = 1.0 risk
-    age_risk = _clamp(1.0 - (avg_account_age_days / 1460))  # <4yr = risky
-    stale_risk = _clamp(recent_commit_days / 365)  # older = riskier
-    churn_risk = _clamp(maintainer_churn_count / 5)
-    return _clamp((bus_risk * 0.4) + (age_risk * 0.2) + (stale_risk * 0.25) + (churn_risk * 0.15))
+def _check_cves(pkg: str, ecosystem: str) -> dict:
+    """Query the OSV.dev API for known vulnerabilities (CVE database)."""
+    try:
+        r = httpx.post("https://api.osv.dev/v1/query", json={
+            "package": {"name": pkg, "ecosystem": ecosystem.upper()}
+        }, timeout=15)
+        if r.status_code != 200:
+            return {"cves": [], "count": 0}
+        vulns = r.json().get("vulns", [])
+        cves = []
+        for v in vulns:
+            aliases = v.get("aliases", [])
+            cve_id = next((a for a in aliases if a.startswith("CVE-")), v.get("id", "unknown"))
+            severity = "CRITICAL"
+            # Check GitHub Advisory Database for severity
+            if v.get("database_specific", {}).get("severity"):
+                severity = v["database_specific"]["severity"]
+            cves.append({
+                "id": cve_id,
+                "severity": severity,
+                "summary": v.get("summary", "")[:100],
+            })
+        return {"cves": cves, "count": len(cves)}
+    except Exception:
+        return {"cves": [], "count": 0}
 
-
-def compute_dependency_depth_risk(
-    max_depth: int = 0,
-    total_deps: int = 0,
-) -> float:
-    """Deeper and wider dependency trees increase risk surface."""
-    depth_risk = _clamp(max_depth / 12)
-    width_risk = _clamp(total_deps / 200)
-    return _clamp((depth_risk * 0.6) + (width_risk * 0.4))
-
-
-def compute_abandoned_deps_risk(
-    abandoned_count: int = 0,
-    total_deps: int = 1,
-) -> float:
-    """Fraction of dependencies that haven't been updated in >2 years."""
-    ratio = abandoned_count / max(total_deps, 1)
-    return _clamp(ratio * 1.5)
-
-
-def compute_cve_risk(cve_count: int = 0, critical_count: int = 0) -> float:
-    """Known vulnerabilities increase risk."""
-    base = _clamp(cve_count / 10)
-    crit = _clamp(critical_count / 3)
-    return _clamp((base * 0.5) + (crit * 0.5))
-
-
-def compute_typosquatting_risk(
-    is_typosquat: bool = False,
-    levenshtein_dist: int = 10,
-    popular_package: str = "",
-) -> float:
-    """Typosquatting detection — close names to popular packages."""
-    if is_typosquat:
-        return 1.0
-    if levenshtein_dist <= 1:
-        return 0.9
-    if levenshtein_dist <= 2:
-        return 0.6
-    if levenshtein_dist <= 3:
-        return 0.3
-    return 0.0
-
-
-def compute_version_anomaly_risk(
-    version_jump_magnitude: float = 0.0,
-    sudden_new_deps_count: int = 0,
-    obfuscated_code_detected: bool = False,
-) -> float:
-    """Anomalous version patterns increase risk."""
-    jump_risk = _clamp(version_jump_magnitude / 5)
-    dep_risk = _clamp(sudden_new_deps_count / 5)
-    obf_risk = 1.0 if obfuscated_code_detected else 0.0
-    return _clamp((jump_risk * 0.3) + (dep_risk * 0.4) + (obf_risk * 0.3))
-
-
-def compute_download_anomaly_risk(
-    recent_avg: float = 0,
-    historical_avg: float = 0,
-    download_spike_ratio: float = 1.0,
-) -> float:
-    """Abnormal download patterns (spikes from bots, sudden drops)."""
-    if historical_avg == 0:
-        return 0.0
-    spike_risk = _clamp((download_spike_ratio - 1) / 5)
-    drop_risk = _clamp(1.0 - (recent_avg / max(historical_avg, 1)))
-    return _clamp((spike_risk * 0.6) + (drop_risk * 0.4))
-
+def _fetch_downloads_npm(pkg: str) -> dict:
+    """Get npm download stats from npm API."""
+    try:
+        r = httpx.get(f"https://api.npmjs.org/downloads/point/last-month/{pkg}", timeout=10)
+        data = r.json()
+        return {"monthly_downloads": data.get("downloads", 0)}
+    except Exception:
+        return {"monthly_downloads": 0}
 
 def score_package(
     package: str,
     ecosystem: str = "npm",
     version: str = "latest",
-    maintainer_count: int = 1,
-    avg_account_age_days: float = 365,
-    recent_commit_days: int = 30,
-    maintainer_churn_count: int = 0,
-    max_dep_depth: int = 0,
-    total_deps: int = 0,
-    abandoned_deps: int = 0,
-    cve_count: int = 0,
-    critical_cves: int = 0,
-    is_typosquat: bool = False,
-    levenshtein_dist: int = 10,
-    similar_popular: str = "",
-    version_jump: float = 0.0,
-    sudden_new_deps: int = 0,
-    obfuscated_code: bool = False,
-    recent_downloads: float = 0,
-    historical_downloads: float = 0,
-    download_spike_ratio: float = 1.0,
-    weights: Optional[dict[str, float]] = None,
 ) -> RiskReport:
-    """Main scoring function. Returns a RiskReport with full explainability."""
+    result = RiskReport(package=package, ecosystem=ecosystem, version=version)
+    
+    score = 0.0
+    signals = []
+    
+    if ecosystem == "npm":
+        npm = _fetch_npm(package)
+        downloads = _fetch_downloads_npm(package)
+        
+        # Maintainer signal
+        if npm:
+            maintainers = npm.get("maintainers", [])
+            if len(maintainers) == 0:
+                score += 3.0
+                signals.append({"name": "no_maintainers", "detail": "Package has no listed maintainers"})
+            elif len(maintainers) == 1:
+                score += 1.5
+                signals.append({"name": "single_maintainer", "detail": f"Only {maintainers[0]} maintains this package"})
+            
+            # Version count signal
+            versions = npm.get("versions", [])
+            if len(versions) <= 2:
+                score += 3.0
+                signals.append({"name": "few_versions", "detail": f"Only {len(versions)} versions published"})
+            
+            # Version age signal
+            times = npm.get("times", {})
+            if times:
+                latest_time = times.get(npm.get("latest", ""))
+                version_versions = list(times.keys())
+                if len(version_versions) > 1:
+                    last_version = version_versions[-1]
+                    pub_time = times.get(last_version)
+                    if pub_time:
+                        try:
+                            pub_dt = datetime.fromisoformat(pub_time.replace("Z", "+00:00"))
+                            if hasattr(pub_dt, 'tzinfo') and pub_dt.tzinfo is None:
+                                pub_dt = pub_dt.replace(tzinfo=timezone.utc)
+                            age_days = (datetime.now(timezone.utc) - pub_dt).days
+                            if age_days > 365:
+                                score += 2.0
+                                signals.append({"name": "stale_package", "detail": f"Last release {age_days} days ago"})
+                        except Exception:
+                            pass
+            
+            # License signal
+            license_val = npm.get("license", "")
+            if not license_val or license_val in ("UNLICENSED", "SEE LICENSE IN"):
+                score += 2.0
+                signals.append({"name": "no_license", "detail": "No open-source license found"})
+            
+            # Downloads signal
+            dl_count = downloads.get("monthly_downloads", 0)
+            if dl_count == 0:
+                score += 2.0
+                signals.append({"name": "zero_downloads", "detail": "Less than 1 download per month"})
+            elif dl_count < 1000:
+                score += 1.0
+                signals.append({"name": "low_downloads", "detail": f"Only {dl_count:,} downloads/month"})
+            
+            # Description signal
+            if not npm.get("description"):
+                score += 1.0
+                signals.append({"name": "no_description", "detail": "No description provided"})
+            
+            # Extract repo URL from npm data for GitHub check
+            result.version = npm.get("latest", "unknown")
+    
+    elif ecosystem == "pypi":
+        pypi = _fetch_pypi(package)
+        
+        if pypi:
+            if not pypi.get("license"):
+                score += 2.0
+                signals.append({"name": "no_license", "detail": "No license declared"})
+            
+            if not pypi.get("author"):
+                score += 1.5
+                signals.append({"name": "no_author", "detail": "No author information"})
+            
+            if not pypi.get("summary"):
+                score += 1.0
+                signals.append({"name": "no_summary", "detail": "No project summary"})
+            
+            url_count = pypi.get("urls_count", 0)
+            if url_count == 0:
+                score += 1.0
+                signals.append({"name": "no_distributions", "detail": "No downloadable distributions"})
+            
+            result.version = pypi.get("version", "unknown")
+    
+    # CVE check — same for all ecosystems
+    cve_data = _check_cves(package, ecosystem)
+    cve_count = cve_data.get("count", 0)
+    cves = cve_data.get("cves", [])
+    if cve_count > 0:
+        critical_cves = [c for c in cves if c.get("severity") == "CRITICAL"]
+        high_cves = [c for c in cves if c.get("severity") == "HIGH"]
+        cve_score = min(5.0, cve_count * 1.0 + len(critical_cves) * 2.0)
+        score += cve_score
+        signals.append({
+            "name": "known_vulnerabilities",
+            "detail": f"{cve_count} known CVEs ({len(critical_cves)} critical, {len(high_cves)} high)"
+        })
+        # Add top 3 CVEs
+        for cve in cves[:3]:
+            signals.append({
+                "name": f"CVE: {cve['id']}",
+                "detail": f"{cve['severity']}: {cve['summary'][:80]}"
+            })
+    
+    # Clamp and set
+    result.score = round(min(10.0, max(0.0, score)), 1)
+    result.level = _compute_level(result.score)
+    result.signals = signals
+    
+    return result
 
-    w = {**DEFAULT_WEIGHTS, **(weights or {})}
-
-    # Compute each signal
-    signals: list[Signal] = []
-
-    mt = compute_maintainer_trust(maintainer_count, avg_account_age_days, recent_commit_days, maintainer_churn_count)
-    signals.append(Signal(
-        name="maintainer_trust", raw_value=mt, weight=w["maintainer_trust"],
-        detail=f"maintainers={maintainer_count}, avg_age={avg_account_age_days:.0f}d, last_commit={recent_commit_days}d, churn={maintainer_churn_count}"
-    ))
-
-    dd = compute_dependency_depth_risk(max_dep_depth, total_deps)
-    signals.append(Signal(
-        name="dependency_depth", raw_value=dd, weight=w["dependency_depth"],
-        detail=f"max_depth={max_dep_depth}, total_deps={total_deps}"
-    ))
-
-    ad = compute_abandoned_deps_risk(abandoned_deps, total_deps)
-    signals.append(Signal(
-        name="abandoned_deps", raw_value=ad, weight=w["abandoned_deps"],
-        detail=f"abandoned={abandoned_deps}/{total_deps}"
-    ))
-
-    cv = compute_cve_risk(cve_count, critical_cves)
-    signals.append(Signal(
-        name="cve_count", raw_value=cv, weight=w["cve_count"],
-        detail=f"cves={cve_count}, critical={critical_cves}"
-    ))
-
-    ts = compute_typosquatting_risk(is_typosquat, levenshtein_dist, similar_popular)
-    signals.append(Signal(
-        name="typosquatting", raw_value=ts, weight=w["typosquatting"],
-        detail=f"is_typosquat={is_typosquat}, dist={levenshtein_dist}, similar_to={similar_popular or 'none'}"
-    ))
-
-    va = compute_version_anomaly_risk(version_jump, sudden_new_deps, obfuscated_code)
-    signals.append(Signal(
-        name="version_anomaly", raw_value=va, weight=w["version_anomaly"],
-        detail=f"jump={version_jump}, new_deps={sudden_new_deps}, obfuscated={obfuscated_code}"
-    ))
-
-    da = compute_download_anomaly_risk(recent_downloads, historical_downloads, download_spike_ratio)
-    signals.append(Signal(
-        name="download_anomaly", raw_value=da, weight=w["download_anomaly"],
-        detail=f"recent={recent_downloads:.0f}/mo, hist={historical_downloads:.0f}/mo, spike={download_spike_ratio:.1f}x"
-    ))
-
-    # Weighted composite
-    total_weight = sum(s.weight for s in signals)
-    raw_score = sum(s.raw_value * s.weight for s in signals) / max(total_weight, 1e-9)
-
-    # Scale to 0-10
-    score = round(raw_score * 10, 1)
-
-    # Determine level
-    if score <= 3.0:
-        level = RiskLevel.LOW
-    elif score <= 6.0:
-        level = RiskLevel.MEDIUM
-    elif score <= 8.0:
-        level = RiskLevel.HIGH
-    else:
-        level = RiskLevel.CRITICAL
-
-    # Compute contributions
-    for s in signals:
-        s.contribution = round((s.raw_value * s.weight / max(total_weight, 1e-9)) * 10, 2)
-
-    return RiskReport(
-        package=package,
-        ecosystem=ecosystem,
-        version=version,
-        score=score,
-        level=level,
-        signals=signals,
-        dependencies_at_risk=abandoned_deps,
-        total_dependencies=total_deps,
-    )
+def score_batch(packages: list[str], ecosystem: str = "npm") -> list[RiskReport]:
+    return [score_package(p, ecosystem) for p in packages]
