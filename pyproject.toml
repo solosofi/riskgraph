@@ -11,12 +11,6 @@ license = "MIT"
 requires-python = ">=3.9"
 authors = [{name = "RiskGraph"}]
 keywords = ["security", "supply-chain", "risk", "npm", "pypi", "threat-intelligence"]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "Topic :: Security",
-    "License :: OSI Approved :: MIT License",
-]
 dependencies = [
     "click>=8.1",
     "rich>=13.0",
