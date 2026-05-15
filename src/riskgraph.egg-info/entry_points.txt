@@ -1,0 +1,2 @@
+[console_scripts]
+os-risk = riskgraph.cli:main

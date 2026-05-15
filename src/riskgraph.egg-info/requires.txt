@@ -1,0 +1,9 @@
+click>=8.1
+rich>=13.0
+httpx>=0.25
+fastapi>=0.104
+uvicorn>=0.24
+
+[dev]
+pytest>=7.0
+pytest-httpx
