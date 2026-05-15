@@ -1,0 +1,7 @@
+app = "riskgraph-api"
+primary_region = "iad"
+[build]
+  dockerfile = "Dockerfile"
+[http_service]
+  internal_port = 8000
+  force_https = true
