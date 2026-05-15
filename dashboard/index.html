@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RiskGraph — Credit Score for Open-Source Packages</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="navbar">
+  <div class="brand">🔒 <span>RiskGraph</span></div>
+  <div class="links">
+    <a href="https://github.com/yourname/riskgraph" target="_blank">GitHub</a>
+    <a href="/docs">API Docs</a>
+  </div>
+</nav>
+
+<main class="hero">
+  <h1>Credit Score for Open-Source Packages</h1>
+  <p class="subtitle">Know the risk before you <code>npm install</code></p>
+
+  <div class="search-box">
+    <select id="ecosystem">
+      <option value="npm">npm</option>
+      <option value="pypi">PyPI</option>
+    </select>
+    <input type="text" id="pkg-input" placeholder="Enter package name (e.g. lodash)" autofocus>
+    <button id="search-btn">🔍 Analyze</button>
+  </div>
+</main>
+
+<section id="result" class="result hidden">
+  <div class="score-card">
+    <div class="score-ring">
+      <svg viewBox="0 0 120 120">
+        <circle class="track" cx="60" cy="60" r="52"/>
+        <circle id="score-circle" class="value" cx="60" cy="60" r="52" stroke-dasharray="326.73" stroke-dashoffset="326.73"/>
+      </svg>
+      <div class="score-text">
+        <div id="score-num">0.0</div>
+        <div class="score-label">/ 10</div>
+      </div>
+    </div>
+    <div class="score-meta">
+      <h2 id="pkg-name">package</h2>
+      <span id="pkg-version">v1.0.0</span>
+      <div id="risk-level" class="badge low">Low Risk</div>
+    </div>
+  </div>
+
+  <div class="signals-grid" id="signals">
+    <!-- Populated by JS -->
+  </div>
+
+  <div class="graph-panel" id="graph-panel">
+    <h3>Dependency Graph</h3>
+    <div id="graph-viz"></div>
+  </div>
+</section>
+
+<footer>
+  RiskGraph v0.1.0 — Open-Source Threat Intelligence Graph
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
