@@ -58,9 +58,9 @@ MIT
 
 RiskGraph is designed as a paid API for AI agents and CI/CD pipelines. Recommended RapidAPI pricing:
 
-- Free: 100 calls/day
+- Trial: 3 calls/day
 - Usage-based: $0.10 per call
-- Pro: $49/month for 10,000 calls/day
+- Pro: $49/month for 1,000 included calls + $0.10/call
 - Enterprise: custom SLA + unlimited volume
 
 Core endpoint:
@@ -95,6 +95,6 @@ Fastest options:
 
 Use `RAPIDAPI.md` and `openapi.yaml` for the listing. Recommended monetization:
 
-- Free: 100 calls/day
+- Trial: 3 calls/day
 - Usage: $0.10/call
-- Pro: $49/month for 10,000 calls/day
+- Pro: $49/month for 1,000 included calls + $0.10/call
