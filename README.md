@@ -52,3 +52,21 @@ Response:
 ## License
 
 MIT
+
+
+## Monetized API
+
+RiskGraph is designed as a paid API for AI agents and CI/CD pipelines. Recommended RapidAPI pricing:
+
+- Free: 100 calls/day
+- Usage-based: $0.10 per call
+- Pro: $49/month for 10,000 calls/day
+- Enterprise: custom SLA + unlimited volume
+
+Core endpoint:
+
+```http
+GET /api/v1/package-risk/{ecosystem}/{package}
+```
+
+Example use cases: autonomous coding agents checking dependencies before install, CI dependency gates, security audits, and package reputation scoring.
