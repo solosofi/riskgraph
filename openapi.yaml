@@ -13,7 +13,7 @@ info:
     name: MIT
     url: https://github.com/solosofi/riskgraph/blob/master/LICENSE
 servers:
-  - url: https://riskgraph.onrender.com
+  - url: https://riskgraph.up.railway.app
     description: Public production API
   - url: http://localhost:8000
     description: Local development

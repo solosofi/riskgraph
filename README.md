@@ -54,23 +54,6 @@ Response:
 MIT
 
 
-## Monetized API
-
-RiskGraph is designed as a paid API for AI agents and CI/CD pipelines. Recommended RapidAPI pricing:
-
-- Trial: 3 calls/day
-- Usage-based: $0.10 per call
-- Pro: $49/month for 1,000 included calls + $0.10/call
-- Enterprise: custom SLA + unlimited volume
-
-Core endpoint:
-
-```http
-GET /api/v1/package-risk/{ecosystem}/{package}
-```
-
-Example use cases: autonomous coding agents checking dependencies before install, CI dependency gates, security audits, and package reputation scoring.
-
 
 ## Public Deployment for RapidAPI
 
@@ -91,10 +74,3 @@ Fastest options:
 3. Set start command if needed:
    `uvicorn riskgraph.api.main:app --host 0.0.0.0 --port $PORT`
 
-### RapidAPI
-
-Use `RAPIDAPI.md` and `openapi.yaml` for the listing. Recommended monetization:
-
-- Trial: 3 calls/day
-- Usage: $0.10/call
-- Pro: $49/month for 1,000 included calls + $0.10/call

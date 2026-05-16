@@ -26,4 +26,4 @@ dev = ["pytest>=7.0", "pytest-httpx"]
 os-risk = "riskgraph.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]

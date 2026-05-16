@@ -44,7 +44,7 @@ class ScanResponse(BaseModel):
     scanned_count: int
     high_risk_count: int
 
-_FREE_TIER = 100
+_FREE_TIER = 3
 _usage: dict[str, int] = {}
 
 def _check_rate(api_key: str | None) -> int:
@@ -105,7 +105,7 @@ def scan_packages(req: ScanRequest, api_key: Optional[str] = Header(None, alias=
 
 @app.get("/api/v1/status")
 def api_status():
-    return {"status": "ok", "version": "0.1.0", "free_tier_limit": _FREE_TIER}
+    return {"status": "ok", "version": "0.1.0", "trial_call_limit": _FREE_TIER, "pricing": "$0.10/call via marketplace"}
 
 if __name__ == "__main__":
     import uvicorn
