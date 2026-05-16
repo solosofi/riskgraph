@@ -1,0 +1,123 @@
+openapi: 3.0.3
+info:
+  title: RiskGraph API
+  version: 0.1.0
+  description: |
+    Credit score for open-source packages. RiskGraph analyzes npm and PyPI packages for CVEs via OSV.dev,
+    maintainer health, version anomalies, download trust, and license risk. Built for AI agents, CI/CD pipelines,
+    and security teams that need to verify dependencies before installation.
+  contact:
+    name: RiskGraph
+    url: https://github.com/solosofi/riskgraph
+  license:
+    name: MIT
+    url: https://github.com/solosofi/riskgraph/blob/master/LICENSE
+servers:
+  - url: https://riskgraph.onrender.com
+    description: Public production API
+  - url: http://localhost:8000
+    description: Local development
+paths:
+  /:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: API health status
+  /api/v1/package-risk/{ecosystem}/{package}:
+    get:
+      summary: Score a package risk profile
+      operationId: getPackageRisk
+      parameters:
+        - name: ecosystem
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [npm, pypi]
+          example: npm
+        - name: package
+          in: path
+          required: true
+          schema:
+            type: string
+          example: lodash
+      responses:
+        '200':
+          description: Package risk score
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  package:
+                    type: string
+                  ecosystem:
+                    type: string
+                  score:
+                    type: number
+                    description: Lower is safer, higher is riskier
+                  level:
+                    type: string
+                    enum: [LOW, MEDIUM, HIGH, CRITICAL]
+                  signals:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        risk: {type: string}
+                        detail: {type: string}
+              example:
+                package: lodash
+                ecosystem: npm
+                score: 1.5
+                level: LOW
+                signals:
+                  - name: cve_history
+                    risk: LOW
+                    detail: No known active CVEs found via OSV.dev
+        '404':
+          description: Package not found
+  /api/v1/scan:
+    post:
+      summary: Batch score multiple packages
+      operationId: scanPackages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [packages]
+              properties:
+                packages:
+                  type: array
+                  items:
+                    type: object
+                    required: [ecosystem, package]
+                    properties:
+                      ecosystem:
+                        type: string
+                        enum: [npm, pypi]
+                      package:
+                        type: string
+            example:
+              packages:
+                - ecosystem: npm
+                  package: lodash
+                - ecosystem: pypi
+                  package: requests
+      responses:
+        '200':
+          description: Batch risk results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object

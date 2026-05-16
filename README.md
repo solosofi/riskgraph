@@ -70,3 +70,31 @@ GET /api/v1/package-risk/{ecosystem}/{package}
 ```
 
 Example use cases: autonomous coding agents checking dependencies before install, CI dependency gates, security audits, and package reputation scoring.
+
+
+## Public Deployment for RapidAPI
+
+RapidAPI cannot call `localhost`; deploy RiskGraph first and use the public URL as the RapidAPI base URL.
+
+Fastest options:
+
+### Render
+
+1. Connect this repository to Render.
+2. Render auto-detects `render.yaml`.
+3. Public base URL target: `https://riskgraph.onrender.com`.
+
+### Railway
+
+1. Connect this repository to Railway.
+2. Railway uses `railway.toml`.
+3. Set start command if needed:
+   `uvicorn riskgraph.api.main:app --host 0.0.0.0 --port $PORT`
+
+### RapidAPI
+
+Use `RAPIDAPI.md` and `openapi.yaml` for the listing. Recommended monetization:
+
+- Free: 100 calls/day
+- Usage: $0.10/call
+- Pro: $49/month for 10,000 calls/day
