@@ -1,67 +1,51 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RiskGraph — Credit Score for Open-Source Packages</title>
-<link rel="stylesheet" href="style.css">
-</head>
+<head><meta charset="UTF-8"><title>RiskGraph</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e1a;color:#c0c8e0;font-family:-apple-system,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:2rem}
+h1{font-size:2.5rem;color:#00ff88;margin-bottom:.25rem;text-shadow:0 0 20px rgba(0,255,136,.15)}
+.card{background:#141828;padding:2rem;border-radius:16px;max-width:640px;width:100%;border:1px solid rgba(255,255,255,.04)}
+select,input{width:100%;padding:.8rem;margin:.4rem 0;background:#1a2040;border:1px solid #2a3050;color:#c0c8e0;border-radius:10px;font-size:1rem}
+button{background:#00ff88;color:#000;padding:.8rem;border:none;border-radius:10px;font-weight:600;font-size:1rem;width:100%;cursor:pointer}
+.score-ring{width:120px;height:120px;border-radius:50%;border:8px solid;display:flex;align-items:center;justify-content:center;margin:1rem auto;font-size:2.8rem;font-weight:700}
+.low{border-color:#22dd44;color:#22dd44}.medium{border-color:#ffaa00;color:#ffaa00}.high{border-color:#ff3344;color:#ff3344}.critical{border-color:#ff0033;color:#ff0033}
+.sig{padding:.4rem 0;border-bottom:1px solid #ffffff0a}
+.sn{color:#00ff88;font-weight:500}
+.footer{margin-top:2rem;color:#4a5a7a;font-size:.8rem}
+.footer a{color:#00ff88;text-decoration:none}
+</style></head>
 <body>
-<nav class="navbar">
-  <div class="brand">🔒 <span>RiskGraph</span></div>
-  <div class="links">
-    <a href="https://github.com/yourname/riskgraph" target="_blank">GitHub</a>
-    <a href="/docs">API Docs</a>
-  </div>
-</nav>
-
-<main class="hero">
-  <h1>Credit Score for Open-Source Packages</h1>
-  <p class="subtitle">Know the risk before you <code>npm install</code></p>
-
-  <div class="search-box">
-    <select id="ecosystem">
-      <option value="npm">npm</option>
-      <option value="pypi">PyPI</option>
-    </select>
-    <input type="text" id="pkg-input" placeholder="Enter package name (e.g. lodash)" autofocus>
-    <button id="search-btn">🔍 Analyze</button>
-  </div>
-</main>
-
-<section id="result" class="result hidden">
-  <div class="score-card">
-    <div class="score-ring">
-      <svg viewBox="0 0 120 120">
-        <circle class="track" cx="60" cy="60" r="52"/>
-        <circle id="score-circle" class="value" cx="60" cy="60" r="52" stroke-dasharray="326.73" stroke-dashoffset="326.73"/>
-      </svg>
-      <div class="score-text">
-        <div id="score-num">0.0</div>
-        <div class="score-label">/ 10</div>
-      </div>
-    </div>
-    <div class="score-meta">
-      <h2 id="pkg-name">package</h2>
-      <span id="pkg-version">v1.0.0</span>
-      <div id="risk-level" class="badge low">Low Risk</div>
-    </div>
-  </div>
-
-  <div class="signals-grid" id="signals">
-    <!-- Populated by JS -->
-  </div>
-
-  <div class="graph-panel" id="graph-panel">
-    <h3>Dependency Graph</h3>
-    <div id="graph-viz"></div>
-  </div>
-</section>
-
-<footer>
-  RiskGraph v0.1.0 — Open-Source Threat Intelligence Graph
-</footer>
-
-<script src="app.js"></script>
-</body>
-</html>
+<h1>→ RiskGraph</h1>
+<p style="color:#6a7a9a;margin-bottom:1rem">Credit score for open-source packages</p>
+<div class="card">
+<select id="eco"><option value="npm">npm</option><option value="pypi">PyPI</option></select>
+<input type="text" id="pkg" placeholder="Package name (e.g. lodash)" onkeypress="if(event.key==='Enter')analyze()">
+<button onclick="analyze()">→ Analyze</button>
+<div id="result" style="display:none;margin-top:1rem">
+<div id="ring" class="score-ring low">--</div>
+<div id="lvl" style="text-align:center;letter-spacing:3px;font-size:1.1rem">-</div>
+<div id="sigs" style="margin-top:1rem"></div>
+</div></div>
+<div class="footer"><a href="https://github.com/solosofi/riskgraph">GitHub</a> · <a href="http://localhost:8000/docs">API</a> · v0.1.0</div>
+<script>
+const API='http://localhost:8000';
+async function analyze(){
+  const p=document.getElementById('pkg').value.trim(),e=document.getElementById('eco').value;
+  if(!p)return;
+  document.getElementById('result').style.display='block';document.getElementById('ring').textContent='...';
+  try{
+    const r=await fetch(API+'/api/v1/package-risk/'+e+'/'+encodeURIComponent(p));
+    const d=await r.json(),s=d.score.toFixed(1);
+    document.getElementById('ring').textContent=s;
+    const l=d.level.toLowerCase();
+    document.getElementById('ring').className='score-ring '+(l==='low'?'low':l==='medium'?'medium':l==='high'?'high':'critical');
+    document.getElementById('lvl').textContent=d.level;
+    const sigs=(d.signals||[]).map(s=>'<div class="sig"><span class="sn">\u26a0 '+s.name+'</span><br><span style="color:#8a9ab8;font-size:.9rem">'+(s.detail||'').slice(0,100)+'</span></div>').join('');
+    document.getElementById('sigs').innerHTML=sigs||'<div class="sig">No risk signals detected</div>';
+  }catch(e){
+    document.getElementById('ring').textContent='ERR';
+    document.getElementById('sigs').innerHTML='<div class="sig">Connection error: '+e.message.slice(0,60)+'</div>';
+  }
+}
+</script></body></html>
