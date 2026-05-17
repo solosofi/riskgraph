@@ -80,6 +80,16 @@ def _score_one(package: str, ecosystem: str) -> PackageRiskResponse:
         typosquatting=typo,
     )
 
+@app.get("/")
+def root():
+    return {
+        "name": "RiskGraph API",
+        "status": "ok",
+        "docs": "/docs",
+        "pricing": "$0.10/call via API marketplace",
+        "trial_call_limit": _FREE_TIER,
+    }
+
 @app.get("/api/v1/package-risk/{ecosystem}/{package}")
 def get_package_risk(ecosystem: str, package: str, api_key: Optional[str] = Header(None, alias="x-api-key")):
     if _check_rate(api_key) <= 0:
